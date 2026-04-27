@@ -1,0 +1,415 @@
+void tangentSpace(float3 N, out float3 T, out float3 B){
+    float s = (N.z >= 0.0f) ? 1.0f : -1.0f;
+    float a = -1.0f / (s + N.z);
+    float b = N.x*N.y*a;
+    T = float3(1.0f+s*N.x*N.x*a, s*b, -s*N.x);
+    B = float3(b, s+N.y*N.y*a, -N.y);
+}
+
+float3 sampleCosineHemisphere(float3 N, float2 rand){
+    float2 tmp = rand;
+    float u1 = tmp.x;
+    float u2 = tmp.y;
+    
+    float r = sqrt(u1);
+    float phi = 2.0f * 3.14159265 * u2;
+    
+    float3 H;
+    H.x = r * cos(phi);
+    H.y = r * sin(phi);
+    H.z = sqrt(1-u1);
+    
+    float3 T, B;
+    tangentSpace(N, T, B);
+    
+    return normalize(T*H.x + B*H.y + N*H.z);
+}
+
+float cosinePDF(float3 N, float3 dir){
+    return dot(N,dir)/3.1415926535;
+}
+
+//--------------------------------
+//--------------------------------
+
+//ω_oは出射方向，ω_iは入射方向, 逆向きにトレースしてることに注意
+void evaluate_lambert(
+    in VertexType0Attribute hit_payload,
+    in float3 omega_o,
+    inout UniformRandom uniform_random,
+    out float3 out_Le,
+    out float3 out_omega_i,
+    out float3 out_alpha){
+    
+    
+    //Le(x,ω_i,ω_o)
+    out_Le = hit_payload.emissive.rgb;   
+    
+    //sample ω_i
+    out_omega_i = sampleCosineHemisphere(hit_payload.normal, uniform_random.rand());
+    
+    //update alpha(Leを除いた部分), (= fs * cos / pdf)
+    // cosinePDF = cos/pi;
+    //alpha = albedo/pi * cos / cosinePDF; -> albedo
+    out_alpha = hit_payload.albedo.rgb;
+}
+
+float3 path_trace(
+    RayDesc ray_desc, 
+    inout UniformRandom uniform_random, 
+    RaytracingAccelerationStructure as, 
+    GPU_FrameRenderData frame_data,
+    Texture2D<float4> texs[],
+    SamplerState sampler_stats[]) {
+
+    float3 radiance = float3(0.0);
+    float3 alpha = float3(1.0); // fs * cos / pdf
+ 
+    for(int ray_idx = 0; ray_idx < 8; ray_idx++){
+
+        RtPayload payload;
+
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray_desc, payload);
+        
+        // miss
+        if(payload.is_hit == false) break;
+        
+        // hit
+        VertexType0Attribute vertex_attribute = fetch_hit_point_info_linear_albedo_no_lod(
+            ray_desc,
+            0,
+            payload,
+            frame_data,
+            texs,
+            sampler_stats 
+        );
+        
+        // back face check
+        bool is_back_face_hit = dot(-ray_desc.Direction, vertex_attribute.normal) <= 0.0;
+        if(is_back_face_hit) vertex_attribute.normal *= -1.0;
+        
+        //trace ray, ω_oは出射方向，ω_iは入射方向, 逆向きにトレースしてることに注意
+        
+        float3 omega_o = -ray_desc.Direction;  
+        float3 Le = vertex_attribute.emissive.rgb, omega_i;
+
+        // bsdf
+        BSDF bsdf = BSDF(vertex_attribute.roughness, vertex_attribute.metalness, vertex_attribute.normal, vertex_attribute.albedo.rgb, -ray_desc.Direction);
+        bsdf.sample_fs(float4(uniform_random.rand(), uniform_random.rand()), omega_i);
+        if (dot(omega_i, vertex_attribute.normal) <= 0) break;
+                
+        //update radiance += alpha*Le(x,ω_i,ω_o)
+        radiance += alpha*Le;
+
+        //update alpha (alpha = fs * cos / pdf)
+        alpha *= bsdf.eval_fs(omega_i) * dot(vertex_attribute.normal, omega_i) * 1.0/bsdf.eval_pdf(omega_i);
+        
+        //next ray
+        ray_desc.Origin         = vertex_attribute.position;
+        ray_desc.Direction      = omega_i;
+    }
+
+    return radiance;
+}
+
+
+//--------------------------------
+//--------------------------------
+
+uint hash_u32(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352d;
+    x ^= x >> 15;
+    x *= 0x846ca68b;
+    x ^= x >> 16;
+    return x;
+}
+
+// Van der Corput sequence
+float vanDerCorput(uint n, uint base) {
+    float result = 0.0;
+    float invBase = 1.0 / float(base);
+    float fraction = invBase;
+
+    while (n > 0u) {
+        result += float(n % base) * fraction;
+        n /= base;
+        fraction *= invBase;
+    }
+
+    return result;
+}
+
+// Halton 2D (base 5, base 7)
+float2 halton2D(uint index) {
+    return float2(
+        vanDerCorput(index, 5u),
+        vanDerCorput(index, 7u)
+    );
+}
+
+uint createSeed(uint frame, uint pixel_id, uint times){
+    uint combined = pixel_id ^ (frame * 16777619u) ^ (times* 374761393u);
+    uint seed = hash_u32(combined); 
+    return seed == 0 ? 31415 : seed ;
+}
+
+struct UniformRandom {
+    uint32_t times;
+    uint32_t frame;
+    uint32_t width;
+    uint32_t2 pixel_id;
+    
+    __init(uint32_t f, uint32_t w, uint32_t2 p){
+        times = 0;
+        frame = f;
+        width = w;
+        pixel_id = p;
+    }
+    
+    [mutating]
+    float2 rand(){
+        float2 temp = halton2D(createSeed(frame, width*pixel_id.y+pixel_id.x, times));
+        times += 1;
+        return temp;
+    }
+};
+
+//-----------------------------------
+//-----------------------------------
+
+RayDesc create_first_ray(GPU_FrameRenderData render_data, uint2 screen_size, uint2 launch_id_xy){
+    // Calculate the u,v,w unit basis vectors for the camera coordinate frame.
+    float3 w = -normalize(render_data.camera_lookat_d.xyz);
+    float3 u = normalize(cross(render_data.camera_vup_vfov.xyz, w));
+    float3 v = cross(w, u);
+    
+    // calc viewport
+    float vfov = 40.0;
+    float focal_length = 5.0;
+    float aspect = (float)screen_size.x / (float)screen_size.y;
+    float theta = (vfov) * 3.141592 / 180;
+    float viewport_height = 2 * tan(theta / 2) * focal_length;
+    float viewport_width = viewport_height * aspect;
+
+    // Calculate the vectors across the horizontal and down the vertical viewport edges.
+    float3 viewport_u = viewport_width* u;
+    float3 viewport_v = viewport_height* -v;
+
+    // Calculate the horizontal and vertical delta vectors from pixel to pixel.
+    float3 pixel_delta_u = viewport_u / float(screen_size.x);
+    float3 pixel_delta_v = viewport_v / float(screen_size.y);
+
+    // Calculate the location of the upper left pixel.
+    float3 viewport_upper_left = render_data.camera_position.xyz
+                         - focal_length*w
+                         - viewport_u/2.0f 
+                         - viewport_v/2.0f;
+
+    float3 pixel00_loc = viewport_upper_left 
+                + 0.5f * (pixel_delta_u + pixel_delta_v);  
+
+    float3 target     = pixel00_loc.xyz 
+                    + launch_id_xy.x*pixel_delta_u 
+                    + launch_id_xy.y*pixel_delta_v;
+
+    RayDesc ray;
+    ray.Origin      = render_data.camera_position.xyz;
+    ray.Direction = normalize(target - ray.Origin);
+    ray.TMax = 1e5;
+    ray.TMin = 1e-5;
+    return ray;
+}
+
+//-----------------------------
+//-----------------------------
+
+[[shader("raygen")]]
+void main_rgen(){
+    uint3 launch_index = DispatchRaysIndex().xyz;
+    uint3 launch_size = DispatchRaysDimensions().xyz;
+
+    RayDesc ray_desc = create_first_ray(
+        frame_render_data,
+        uint2(frame_render_data.render_target_width, frame_render_data.render_target_height),
+        launch_index.xy
+    );
+    
+    UniformRandom uniform_random = UniformRandom(frame_render_data.editor_data[1] + uint32_t(light_tile_info[0]), launch_size.x, launch_index.xy);
+    
+    AreaLightSampler area_light_sampler = AreaLightSampler(light_tile_info);
+
+    float3 radiance = path_trace(ray_desc, uniform_random, accelaration_structures[0], frame_render_data, textures, samplers);
+    //float3 radiance = path_trace_nee(ray_desc, uniform_random, accelaration_structures[0], frame_render_data, textures, samplers, area_light_sampler);
+    //float3 radiance = path_trace_mis(ray_desc, uniform_random, accelaration_structures[0], frame_render_data, textures, samplers, area_light_sampler);
+
+    acc_image[launch_index.xy].rgb += radiance;
+    output_image[launch_index.xy].rgb = linear_to_srgb(acc_image[launch_index.xy].xyz/float(frame_render_data.editor_data[1]+1));
+    
+    if(frame_render_data.editor_data[0] == 1) acc_image[launch_index.xy] = float4(0.0f);
+}
+
+[[shader("miss")]]
+void main_miss(inout RtPayload payload) {
+    payload.is_hit = false;
+}
+
+//--------------------------
+//--------------------------
+
+float3 path_trace_nee(
+    RayDesc ray_desc, 
+    inout UniformRandom uniform_random, 
+    RaytracingAccelerationStructure as, 
+    GPU_FrameRenderData frame_data,
+    Texture2D<float4> texs[],
+    SamplerState sampler_stats[],
+    inout AreaLightSampler area_light_sampler) {
+
+    float3 radiance = float3(0.0);
+    float3 alpha = float3(1.0); // fs * cos / pdf
+    
+    // calc first hit 
+    RtPayload payload;
+
+    TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray_desc, payload);
+    
+    //      miss
+    if(payload.is_hit == false) return radiance;
+    
+    //      hit
+    VertexType0Attribute hit_surface= fetch_hit_point_info_linear_albedo_no_lod(
+        ray_desc,
+        0,
+        payload,
+        frame_data,
+        texs,
+        sampler_stats 
+    );
+    
+    //      back face check
+    bool is_back_face_hit = dot(-ray_desc.Direction, hit_surface.normal) <= 0.0;
+    if(is_back_face_hit) hit_surface.normal *= -1.0;
+    
+    // first hit
+    radiance += hit_surface.emissive.rgb;
+
+    for(int ray_idx = 0; ray_idx < 8; ray_idx++){
+
+        BSDF bsdf = BSDF(hit_surface.roughness, hit_surface.metalness, hit_surface.normal, hit_surface.albedo.rgb, -ray_desc.Direction);
+
+        // NEE
+        
+        //      light sampling
+        float3 light_pos;
+        float light_pdf;
+        float3 light_normal;
+        float3 nee_Le;
+        area_light_sampler.sample(float4(uniform_random.rand(), uniform_random.rand()).xyz, light_pos, light_pdf, light_normal, nee_Le);
+
+        //      shadow ray
+        RayDesc nee_ray_desc;
+        nee_ray_desc.Origin = hit_surface.position;
+        nee_ray_desc.Direction = normalize(light_pos - nee_ray_desc.Origin);
+        nee_ray_desc.TMin = 1e-2;
+        nee_ray_desc.TMax = length(light_pos - nee_ray_desc.Origin) - nee_ray_desc.TMin;
+        RtPayload nee_payload;
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 0, 0, nee_ray_desc, nee_payload);
+        
+        //      nee radiance
+        float V = nee_payload.is_hit == false ? 1.0 : 0.0;
+        float G = abs(dot(hit_surface.normal, nee_ray_desc.Direction)) * abs(dot(light_normal, nee_ray_desc.Direction)) / dot(light_pos-hit_surface.position, light_pos-hit_surface.position);
+            // update radiance += alpha * fs * G * V * 1/pdf *Le(x,ω_i,ω_o)
+        radiance += alpha * bsdf.eval_fs(nee_ray_desc.Direction) * G * V * 1.0f/light_pdf * nee_Le;
+        
+        
+        // Next ray
+        
+        //      trace ray, ω_oは出射方向，ω_iは入射方向, 逆向きにトレースしてることに注意
+        float3 omega_i;
+
+        //      bsdf
+        bsdf.sample_fs(float4(uniform_random.rand(), uniform_random.rand()), omega_i);
+        if (dot(omega_i, hit_surface.normal) <= 0) break;
+
+        //      update alpha (alpha = fs * cos / pdf)
+        alpha *= bsdf.eval_fs(omega_i) * dot(hit_surface.normal, omega_i) * 1.0f/bsdf.eval_pdf(omega_i);
+
+        //      next ray
+        ray_desc.Origin         = hit_surface.position;
+        ray_desc.Direction      = omega_i;
+        TraceRay(as, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray_desc, payload);
+        
+        //  miss
+        if(payload.is_hit == false) break;
+        
+        //  hit
+        hit_surface = fetch_hit_point_info_linear_albedo_no_lod(
+            ray_desc,
+            0,
+            payload,
+            frame_data,
+            texs,
+            sampler_stats 
+        );
+        
+        //  back face check
+        bool is_back_face_hit = dot(-ray_desc.Direction, hit_surface.normal) <= 0.0;
+        if(is_back_face_hit) hit_surface.normal *= -1.0;
+    }
+
+    return radiance;
+}
+
+//--------------------------
+//--------------------------
+
+
+//------index------
+layout(buffer_reference, buffer_reference_align = 4, scalar) readonly buffer Indices{
+    uvec3 i[];
+};
+
+//-----vertexPN-------
+layout(buffer_reference, buffer_reference_align = 4, scalar) readonly buffer verticesPN{
+    vertexPN v[];
+};
+
+//---------------------------
+//  fetch vertex utility
+//---------------------------
+vertexPN fetchVertexInterleavedPN(
+    vec3 barys,
+    uint64_t vertex_buffer_addr,
+    uint64_t index_buffer_addr){
+
+    Indices indices = Indices(index_buffer_addr);
+    verticesPN verts = verticesPN(vertex_buffer_addr);
+    
+    uvec3 idx = indices.i[gl_PrimitiveID];
+    vertexPN v0 = verts.v[idx.x];
+    vertexPN v1 = verts.v[idx.y];
+    vertexPN v2 = verts.v[idx.z];
+    
+    vertexPN cur_vertex;
+    cur_vertex.position     = v0.position*barys.x + v1.position*barys.y + v2.position*barys.z;
+    cur_vertex.normal       = v0.normal*barys.x + v1.normal*barys.y + v2.normal*barys.z;
+    
+    return cur_vertex;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
