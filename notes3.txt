@@ -1,0 +1,15 @@
+・先に全StreamBufferをCommitConsumedする
+
+・全StreamBufferを探索して，ConsumedのLoad命令を作る
+
+・m_CurrentStreamBufferはやめる
+
+・GetPlaybackEndFrame()
+・GetPlaybackStartFrame(u64 loopcount)
+
+・ループの最後で，NextLoadFrameChunkは脳死で＋１して，ループの最初で，頭に戻すかどうか決める
+
+・現在のplayedFrameCountを含むフレームがあるかどうかで，NextFrameChunkを決める  
+  ある場合ー＞NextFrameChunk ＝ CurrenFrameChunk＋１
+  ない場合ー＞NextFrameChunk ＝ CurrenFrameChunk
+  （ループの最初で，頭に戻すかどうか決めるから，問題ない）
