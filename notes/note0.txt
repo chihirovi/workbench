@@ -1,6 +1,7 @@
 ・空きのIDを管理するクラスを作りたい
 ・DescPoolSlotIndex
 ・何もない状態での，空のhandleの値が見たい
+・Buffer Reference ２ を使おう！
 
 ・先にDescPoolSlotIndexを取得してHandleだけ作って，
   あとから（Rendering が終わってから），DescPoolを更新する
