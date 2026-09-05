@@ -2,6 +2,7 @@
 ・DescPoolSlotIndex
 ・何もない状態での，空のhandleの値が見たい
 ・Buffer Reference ２ を使おう！
+・GTFのBindAsTextureの中身を見る
 
 ・先にDescPoolSlotIndexを取得してHandleだけ作って，
   あとから（Rendering が終わってから），DescPoolを更新する
