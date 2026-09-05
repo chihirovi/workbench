@@ -1,0 +1,86 @@
+・空きのIDを管理するクラスを作りたい
+・DescPoolSlotIndex
+・何もない状態での，空のhandleの値が見たい
+
+・先にDescPoolSlotIndexを取得してHandleだけ作って，
+  あとから（Rendering が終わってから），DescPoolを更新する
+  登録予定と削除予定のSlotIndexだけ内部で記録しておく．
+	
+	ImageManager.Register(Image*);
+	ImageManager.UnRegister(Image*);
+	ImageManager.UpdateDescriptorPool();
+
+・TextureTable，MaterialTableとかは毎フレーム全部作り直す（非同期のフェーズで）
+
+・あと，ModelData(頂点バッファとか，テクスチャとか)の破棄のタイミングも
+  DescPoolのUpdate と同様に，Renderingが終わってからやるように．
+  Rendering 中に破棄されたらまずい
+  （Uniqueになってるはずだから，破棄予定のVectorに詰めて，Resize(0)でOK）
+
+・大体こんな感じ
+
+    SceneManager｛
+        std::vector<Model*> m_registeredModels;
+        std::vector<Model*> m_modelsToRegister;
+        std::vector<Model*> m_modelsToUnregister;
+    }
+
+	Scene.SetMatrix(model_0, mat4x4);
+	Scene.ApplyMatrix(model_1, mat4x4);
+	Scene.RegisterModel(model_2);  	// m_modelsToRegister に入れる
+	Scene.Instantiate(model_2, "name");
+ 	Scene.UnRegisterModel(model_3); // m_registeredModels から m_modelsToUnregister に Move する
+	Scene.GetCamera().Move(x, y);
+
+	Scene.BuildFrameRenderData();// ここで，RenderInstanceTable
+				     // MaterialTable, TextureTable
+			             // Register，Unregister の処理をする
+				     // 登録モデルがあるなら，TextureとかのDescPoolSlotIndexの取得
+
+	RenderLoop.EndFrame(); // GPU の処理完了と同期する
+
+	Scene.CommitRenderResources(); // DescriptorPoolのUpdate
+			               // UnRegisterされた(GPU側の)リソースの破棄
+                                       // など，同期的にやらないといけない処理
+				       // m_modelsToRegister から m_registeredModels に Move する
+				       // 登録解除のモデルがあるなら，
+						TextureとかのDescPoolSlotIndexの破棄 と DescPoolのFree
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
