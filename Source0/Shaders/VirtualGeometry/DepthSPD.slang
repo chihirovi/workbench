@@ -130,19 +130,18 @@ void main_comp(
         // ------------------------------------------------------------
         // Mip0
         //
-        // IMPORTANT:
-        // Do bounds check BEFORE indexing the UAV.
+        // Mip0 はわざわざ作らないことにした
         // ------------------------------------------------------------
 
-        uint2 p00 = p + uint2(0, 0);
-        uint2 p10 = p + uint2(1, 0);
-        uint2 p01 = p + uint2(0, 1);
-        uint2 p11 = p + uint2(1, 1);
+        //uint2 p00 = p + uint2(0, 0);
+        //uint2 p10 = p + uint2(1, 0);
+        //uint2 p01 = p + uint2(0, 1);
+        //uint2 p11 = p + uint2(1, 1);
 
-        if (InBounds(p00, mip0_size)) occlusion_hiz[0][p00] = d00;
-        if (InBounds(p10, mip0_size)) occlusion_hiz[0][p10] = d10;
-        if (InBounds(p01, mip0_size)) occlusion_hiz[0][p01] = d01;
-        if (InBounds(p11, mip0_size)) occlusion_hiz[0][p11] = d11;
+        //if (InBounds(p00, mip0_size)) occlusion_hiz[0][p00] = d00;
+        //if (InBounds(p10, mip0_size)) occlusion_hiz[0][p10] = d10;
+        //if (InBounds(p01, mip0_size)) occlusion_hiz[0][p01] = d01;
+        //if (InBounds(p11, mip0_size)) occlusion_hiz[0][p11] = d11;
 
         // ------------------------------------------------------------
         // Mip1
