@@ -14,12 +14,18 @@ bool CoversPixelCenter(ProjectionBoundingSphereInfo info){
 // ============================================================================
 // HiZピラミッドの各ミップサイズ算出（前回作成したSPDシェーダの GetMipSize と同じロジック）
 // ============================================================================
+/*
 uint2 GetHizMipSize(uint2 frame_size, uint mip){
     uint2 size = frame_size;
     for (uint i = 0; i < mip; ++i){
         size = max((size + 1u) >> 1u, uint2(1, 1));
     }
     return size;
+}
+*/
+uint2 GetHizMipSize(uint2 frame_size, uint mip){
+    uint scale = 1u << mip;
+    return max((frame_size + scale - 1u) >> mip, uint2(1, 1));
 }
 
 ProjectionBoundingSphereInfo projection_bounding_sphere(
@@ -203,7 +209,7 @@ bool hiz_occlusion_culling3(
 
     // FIX: ceil(log2(dim)) と等価な整数演算に修正
     uint dim = uint(ceil(max(pixel_size.x, pixel_size.y)));
-    uint mip = clamp(PixelSizeToMip(dim), 0u, 11u);
+    uint mip = clamp(PixelSizeToMip(dim), 1u, 11u);
 
     uint2 mip_size = GetHizMipSize(frame_size, mip);
 
@@ -218,8 +224,8 @@ bool hiz_occlusion_culling3(
     // 収まることが保証されるため、4隅で全域を過不足なくカバーできる。
 
     float occluder_depth;
-    //if (all(texel_min == texel_max)){
-    if (false){
+    if (all(texel_min == texel_max)){
+    //if (false){
         // AABBが単一テクセルに収まっている(多くの場合こちら) -> 1回のフェッチ
         occluder_depth = hiz[mip][texel_min];
     }else{
