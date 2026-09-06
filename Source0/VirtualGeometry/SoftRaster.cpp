@@ -1,0 +1,39 @@
+#include "SoftRaster.hpp"
+
+namespace Irori::VirtualGeometry{
+
+UniqueSoftRasterPipeline::UniqueSoftRasterPipeline(
+        Core::VulkanContext* vc,
+        Irori::Core::ShaderReflect::PipelineShaderResourceInfo& pipeline_shader_resource, 
+        Irori::Core::ShaderReflect::DescsetsInfo& global_desc_info){
+    
+    comp_pipeline_templtate = Core::UniqueCompPipelineTemplate(
+        vc,
+        pipeline_shader_resource,
+        global_desc_info
+    );
+}
+
+void UniqueSoftRasterPipeline::cmd_dispatch(
+    vk::CommandBuffer& cb, 
+    Core::UniqueBuffer& arg_buffer,
+    Stage stage,
+    Irori::Core::UniqueDescriptorSets& global_descsets){
+
+    //bind pipeline -> bind descsetsの順が推奨らしい
+    comp_pipeline_templtate
+        .bind_pipeline(cb)
+        .bind_local_descsets(cb);
+
+    global_descsets.bind_local_descriptor_sets(
+        cb,
+        *comp_pipeline_templtate.pipeline_layout,
+        vk::PipelineBindPoint::eCompute
+    );
+
+    //cb.dispatch((cluster_sum + thread_count_par_cta-1)/thread_count_par_cta, 1, 1);
+    cb.dispatchIndirect(arg_buffer.get_raw_buffer(), uint32_t(stage));
+}
+
+
+}
