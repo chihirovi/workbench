@@ -4,6 +4,7 @@
 ・Buffer Reference ２ を使おう！
 ・GL_EXT_control_flow_attributes
 ・GTFのBindAsTextureの中身を見る
+・SSBOとかIndirect Argのメモリバリアはいるのかな？
 
 ・先にDescPoolSlotIndexを取得してHandleだけ作って，
   あとから（Rendering が終わってから），DescPoolを更新する
