@@ -1,7 +1,6 @@
 #include "Include/GlobalDescriptor.h.slang"
 #include "../Include/GlobalDescriptor.h.slang"
 
-/*
 // グループ共有メモリ: 16x16 のダウンサンプル計算用 (256スレッド)
 groupshared float gs_depth_samples[16][16];
 groupshared uint32_t gs_spd_counter;
@@ -50,11 +49,8 @@ float fetch_depth_from_visiblity_buffer(uint2 pos) {
 // ============================================================================
 
 uint2 GetMipSize(uint mip){
-    uint2 size = IMAGE_SIZE;
-    for (uint i = 0; i < mip; ++i){
-        size = max((size + 1u) >> 1u, uint2(1, 1));
-    }
-    return size;
+    uint scale = 1u << mip;
+    return max((IMAGE_SIZE + scale - 1u) >> mip, uint2(1, 1));
 }
 
 bool InBounds(uint2 p, uint2 size){
@@ -111,8 +107,12 @@ void main_comp(
 
     uint2 mip0_size = GetMipSize(0);
     uint2 mip1_size = GetMipSize(1);
-    uint2 mip2_size = GetMipSize(2);
-
+    
+    // ==================
+    // AMD SPD は 512x512 で，Mip0 を作成せずに，20us
+    // こっちは，そのままだと0.13ms だけど，mip0の作成を省くと 30us (もちろん画像は正しくなくなるが)
+    // ので，おおむね参考実装に近いパフォーマンスは出てる 
+    // ==================
     for (uint i = 0; i < 4; ++i){
         uint2 offset = uint2( (i & 1u) * 2u, (i >> 1u) * 2u);
 
@@ -160,6 +160,8 @@ void main_comp(
     // ========================================================================
     // Mip2
     // ========================================================================
+
+    uint2 mip2_size = GetMipSize(2);
 
     float mip2_val = ReduceMax4(mip1_vals[0], mip1_vals[1], mip1_vals[2], mip1_vals[3]);
 
@@ -220,13 +222,7 @@ void main_comp(
 
     // ========================================================================
     // Mip4
-    //
     // 8x8 -> 4x4
-    //
-    // FIX: 元コードは occlusion_hiz_mip4 (クロスワークグループ集約用の専用リソース)
-    // にしか書いておらず、コメントで警告されている通り occlusion_hiz[4] への
-    // 書き込みが漏れていた。統一Mipチェーンを読む後続処理（オクルージョンテスト等）が
-    // 未初期化データを読んでしまうため、両方に書き込む。
     // ========================================================================
 
     uint2 mip4_size = GetMipSize(4);
@@ -308,8 +304,8 @@ void main_comp(
     // Counter reset
     if (thread_idx == 0) spd_completed_count[0] = 0;
 }
-*/
 
+/*
 // グループ共有メモリ: SPD完了カウンタ用のみ (Mip3/Mip4の交換はWave Intrinsicsで
 // レーン間直接交換するため、gs_depth_samples[16][16] は不要になった)
 groupshared uint32_t gs_spd_counter;
@@ -364,12 +360,10 @@ float fetch_depth_from_visiblity_buffer(uint2 pos) {
 // ============================================================================
 // Mip size:  ceil(size / 2^mip)
 // ============================================================================
+
 uint2 GetMipSize(uint mip){
-    uint2 size = IMAGE_SIZE;
-    for (uint i = 0; i < mip; ++i){
-        size = max((size + 1u) >> 1u, uint2(1, 1));
-    }
-    return size;
+    uint scale = 1u << mip;
+    return max((IMAGE_SIZE + scale - 1u) >> mip, uint2(1, 1));
 }
 
 bool InBounds(uint2 p, uint2 size){
@@ -565,3 +559,4 @@ void main_comp(
 
     if (thread_idx == 0) spd_completed_count[0] = 0;
 }
+*/
