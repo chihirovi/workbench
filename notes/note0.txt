@@ -1,10 +1,5 @@
-・空きのIDを管理するクラスを作りたい
-・DescPoolSlotIndex
-・何もない状態での，空のhandleの値が見たい
-・Buffer Reference ２ を使おう！
-・GL_EXT_control_flow_attributes
-・GTFのBindAsTextureの中身を見る
 ・SSBOとかIndirect Argのメモリバリアはいる
+・深度値の範囲
 
 ・比較
 	・zpre + vertex + forward
