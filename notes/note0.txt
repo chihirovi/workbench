@@ -4,7 +4,16 @@
 ・Buffer Reference ２ を使おう！
 ・GL_EXT_control_flow_attributes
 ・GTFのBindAsTextureの中身を見る
-・SSBOとかIndirect Argのメモリバリアはいるのかな？
+・SSBOとかIndirect Argのメモリバリアはいる
+
+・比較
+	・zpre + vertex + forward
+	・2pass hiz + mesh + forward （と思ったが，描画単位をClusterに分解したせいで，FSを差し替えるのはむずそうなのでなし）
+	・2pass hiz + mesh + visiblity
+	・2pass hiz + mesh + HWSW_Raster + visiblity 
+	  (SW_Rasterの面積見積もりは，Bounding Sphere と Normal Cone で出す，AABBは重いかも)
+	・2pass hiz + mesh + normal cone + frustum + contirbution
+	・2pass hiz + mesh + soft triangle culling 
 
 ・先にDescPoolSlotIndexを取得してHandleだけ作って，
   あとから（Rendering が終わってから），DescPoolを更新する
