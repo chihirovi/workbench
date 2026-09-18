@@ -1,6 +1,9 @@
 ・SSBOとかIndirect Argのメモリバリアはいる
 ・深度値の範囲
 
+・Finalizeで，DescPoolManager から，ImageとかSamplerとかをちゃんとUnregisterすれば，デストラクタの順番は気にしなくてもいいはず？
+・StandardAllcoator の Finalize を呼ばないで，デストラクタに任せてみる
+
 ・比較
 	・zpre + vertex + forward
 	・2pass hiz + mesh + forward （と思ったが，描画単位をClusterに分解したせいで，FSを差し替えるのはむずそうなのでなし）
