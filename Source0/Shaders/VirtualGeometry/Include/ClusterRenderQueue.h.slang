@@ -25,6 +25,7 @@ struct ClusterRenderQueue {
     uint32_t    soft_z2;     // comp shader indirect arg .z
     uint32_t    _padding3;
     // false negative count
+    // 要は，deta_false_negative の Head と Tail に相当するもの
     uint32_t    HW_fn_count;     
     uint32_t    SW_fn_count;
     // false negative select arg
