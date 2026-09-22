@@ -6,6 +6,7 @@
 ・SceneManager で使う，DescPool，FrameRenderDataとか，引数でその都度，外から渡そう．
 ・Scene 以外でBindするものも，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
 ・CpuFrameRenderData,GpuFrameRenderData
+・これ，Material に直接ハンドルを入れればよくない？ Tableとかいらないじゃん
 
 ・比較
 	・zpre + vertex + forward
