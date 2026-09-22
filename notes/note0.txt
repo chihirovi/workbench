@@ -3,6 +3,7 @@
 
 ・Finalizeで，DescPoolManager から，ImageとかSamplerとかをちゃんとUnregisterすれば，デストラクタの順番は気にしなくてもいいはず？
 ・StandardAllcoator の Finalize を呼ばないで，デストラクタに任せてみる
+・SceneManager で使う，DescPoolとか，引数でその都度，外から渡そう．（Scene 以外でBindするものもあるから．RenderQueue，Hizとかいろいろ）
 
 ・比較
 	・zpre + vertex + forward
@@ -56,42 +57,3 @@
 				       // m_modelsToRegister から m_registeredModels に Move する
 				       // 登録解除のモデルがあるなら，
 						TextureとかのDescPoolSlotIndexの破棄 と DescPoolのFree
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
