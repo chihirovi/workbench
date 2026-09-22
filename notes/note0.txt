@@ -4,9 +4,12 @@
 ・Finalizeで，DescPoolManager から，ImageとかSamplerとかをちゃんとUnregisterすれば，デストラクタの順番は気にしなくてもいいはず？
 ・StandardAllcoator の Finalize を呼ばないで，デストラクタに任せてみる
 ・SceneManager で使う，DescPool，FrameRenderDataとか，引数でその都度，外から渡そう．
-・Scene 以外でBindするものも，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
+	・Scene.CommitRenderResources() でDescPoolの更新はしなくなる（外部から渡すから），Modelの削除とかだけやる
+	・Scene 以外でBindするもののために，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
 ・CpuFrameRenderData,GpuFrameRenderData
+	・Buffer& GetRenderInstanceTable(), Buffer& GetMaterialTable(), Buffer& GetPrimitiveDataTable()
 ・これ，Material に直接ハンドルを入れればよくない？ Tableとかいらないじゃん
+	・constexpr InvalidGpuHandle = 0xfffffffff
 
 ・比較
 	・zpre + vertex + forward
@@ -16,14 +19,6 @@
 	  (SW_Rasterの面積見積もりは，Bounding Sphere と Normal Cone で出す，AABBは重いかも)
 	・2pass hiz + mesh + normal cone + frustum + contirbution
 	・2pass hiz + mesh + soft triangle culling 
-
-・先にDescPoolSlotIndexを取得してHandleだけ作って，
-  あとから（Rendering が終わってから），DescPoolを更新する
-  登録予定と削除予定のSlotIndexだけ内部で記録しておく．
-	
-	ImageManager.Register(Image*);
-	ImageManager.UnRegister(Image*);
-	ImageManager.UpdateDescriptorPool();
 
 ・TextureTable，MaterialTableとかは毎フレーム全部作り直す（非同期のフェーズで）
 
@@ -54,7 +49,7 @@
 
 	RenderLoop.EndFrame(); // GPU の処理完了と同期する
 
-	Scene.CommitRenderResources(); // DescriptorPoolのUpdate
+	Scene.CommitRenderResources(); // DescPoolは外から渡すようにする予定だから，ここではUpdateしない
 			               // UnRegisterされた(GPU側の)リソースの破棄
                                        // など，同期的にやらないといけない処理
 				       // m_modelsToRegister から m_registeredModels に Move する
