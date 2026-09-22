@@ -3,7 +3,7 @@
 
 ・Finalizeで，DescPoolManager から，ImageとかSamplerとかをちゃんとUnregisterすれば，デストラクタの順番は気にしなくてもいいはず？
 ・StandardAllcoator の Finalize を呼ばないで，デストラクタに任せてみる
-・SceneManager で使う，DescPoolとか，引数でその都度，外から渡そう．
+・SceneManager で使う，DescPool，FrameRenderDataとか，引数でその都度，外から渡そう．
 ・Scene 以外でBindするものも，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
 ・CpuFrameRenderData,GpuFrameRenderData
 
