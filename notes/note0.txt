@@ -10,6 +10,7 @@
 	・Buffer& GetRenderInstanceTable(), Buffer& GetMaterialTable(), Buffer& GetPrimitiveDataTable()
 ・これ，Material に直接ハンドルを入れればよくない？ Tableとかいらないじゃん
 	・constexpr InvalidGpuHandle = 0xfffffffff
+・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
 
 ・比較
 	・zpre + vertex + forward
