@@ -11,6 +11,7 @@
 ・これ，Material に直接ハンドルを入れればよくない？ Tableとかいらないじゃん
 	・constexpr InvalidGpuHandle = 0xfffffffff
 ・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
+・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL,
 
 ・比較
 	・zpre + vertex + forward
