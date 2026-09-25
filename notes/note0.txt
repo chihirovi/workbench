@@ -1,20 +1,14 @@
 ・SSBOとかIndirect Argのメモリバリアはいる
 ・深度値の範囲
 
-・Finalizeで，DescPoolManager から，ImageとかSamplerとかをちゃんとUnregisterすれば，デストラクタの順番は気にしなくてもいいはず？
-・StandardAllcoator の Finalize を呼ばないで，デストラクタに任せてみる
 ・SceneManager で使う，DescPool，FrameRenderDataとか，引数でその都度，外から渡そう．
 	・Scene.CommitRenderResources() でDescPoolの更新はしなくなる（外部から渡すから），Modelの削除とかだけやる
 	・Scene 以外でBindするもののために，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
-・CpuFrameRenderData,GpuFrameRenderData
-	・Buffer& GetRenderInstanceTable(), Buffer& GetMaterialTable(), Buffer& GetPrimitiveDataTable()
-	・CpuFrameRenderData[2]; みたいに，中でScanBufferCountの配列は持たないで，外で配列として扱う．
 ・CommandBufferも同様に，中で配列はやめて，外で，CommandBuffer[2] として持つ．
-・これ，Material に直接ハンドルを入れればよくない？ Tableとかいらないじゃん
-	・constexpr InvalidGpuHandle = 0xfffffffff
 ・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
 ・GLSLのTexutreには，Float16Vec2をそのまま渡せるらしい
+・ModelはRender::PrimitiveDataをやめて，普通にcbfa::PrimitiveDataを持つ．
 
 ・比較
 	・zpre + vertex + forward
