@@ -6,7 +6,7 @@
 	・Scene 以外でBindするもののために，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
 ・FrameRenderDataはテンプレートを使って，テンプレートインスタンスで2,3だけ書く
 	・Bufferを直に配列じゃなくて，FrameRenderDataの配列にする(要はマネージャー的なもの，)
-	・MultiBufferedFrameRenderData
+	・MultiBufferedFrameRenderData，InitializeOwnResources()
 ・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
 ・GLSLのTexutreには，Float16Vec2をそのまま渡せるらしい
