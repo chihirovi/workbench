@@ -9,6 +9,7 @@
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
 ・GLSLのTexutreには，Float16Vec2をそのまま渡せるらしい
 ・ModelはRender::PrimitiveDataをやめて，普通にcbfa::PrimitiveDataを持つ．
+・UniqueHandle も Optional<T> を使う．
 
 ・比較
 	・zpre + vertex + forward
