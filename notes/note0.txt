@@ -1,17 +1,6 @@
-・SSBOとかIndirect Argのメモリバリアはいる
-・深度値の範囲
-
-・SceneManager で使う，DescPool，FrameRenderDataとか，引数でその都度，外から渡そう．
-	・Scene.CommitRenderResources() でDescPoolの更新はしなくなる（外部から渡すから），Modelの削除とかだけやる
-	・Scene 以外でBindするもののために，RenderQueue，HizとかはFrameRenderDataに別枠の部分を設ける．
-・FrameRenderDataはテンプレートを使って，テンプレートインスタンスで2,3だけ書く
-	・Bufferを直に配列じゃなくて，FrameRenderDataの配列にする(要はマネージャー的なもの，)
-	・MultiBufferedFrameRenderData，InitializeOwnResources()
 ・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
-・GLSLのTexutreには，Float16Vec2をそのまま渡せるらしい
-・ModelはRender::PrimitiveDataをやめて，普通にcbfa::PrimitiveDataを持つ．
-・UniqueHandle も Optional<T> を使う．
+・EndFrameはEndFrameの後に呼ぶ
 
 ・比較
 	・zpre + vertex + forward
@@ -21,39 +10,3 @@
 	  (SW_Rasterの面積見積もりは，Bounding Sphere と Normal Cone で出す，AABBは重いかも)
 	・2pass hiz + mesh + normal cone + frustum + contirbution
 	・2pass hiz + mesh + soft triangle culling 
-
-・TextureTable，MaterialTableとかは毎フレーム全部作り直す（非同期のフェーズで）
-
-・あと，ModelData(頂点バッファとか，テクスチャとか)の破棄のタイミングも
-  DescPoolのUpdate と同様に，Renderingが終わってからやるように．
-  Rendering 中に破棄されたらまずい
-  （Uniqueになってるはずだから，破棄予定のVectorに詰めて，Resize(0)でOK）
-
-・大体こんな感じ
-
-    SceneManager｛
-        std::vector<Model*> m_registeredModels;
-        std::vector<Model*> m_modelsToRegister;
-        std::vector<Model*> m_modelsToUnregister;
-    }
-
-	Scene.SetMatrix(model_0, mat4x4);
-	Scene.ApplyMatrix(model_1, mat4x4);
-	Scene.RegisterModel(model_2);  	// m_modelsToRegister に入れる
-	Scene.Instantiate(model_2, "name");
- 	Scene.UnRegisterModel(model_3); // m_registeredModels から m_modelsToUnregister に Move する
-	Scene.GetCamera().Move(x, y);
-
-	Scene.BuildFrameRenderData();// ここで，RenderInstanceTable
-				     // MaterialTable, TextureTable
-			             // Register，Unregister の処理をする
-				     // 登録モデルがあるなら，TextureとかのDescPoolSlotIndexの取得
-
-	RenderLoop.EndFrame(); // GPU の処理完了と同期する
-
-	Scene.CommitRenderResources(); // DescPoolは外から渡すようにする予定だから，ここではUpdateしない
-			               // UnRegisterされた(GPU側の)リソースの破棄
-                                       // など，同期的にやらないといけない処理
-				       // m_modelsToRegister から m_registeredModels に Move する
-				       // 登録解除のモデルがあるなら，
-						TextureとかのDescPoolSlotIndexの破棄 と DescPoolのFree
