@@ -1,7 +1,10 @@
 ・スカラーレジスタを使えばいいので，Clusterはシェアードに入れたほうがむしろ遅い
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
 ・EndFrameはEndFrameの後に呼ぶ
-・DescPool の遅延アップデートをやめたい
+・Model に RegiseterTesturesAndSamplers と Ungister を生やす
+	・Texture と Sampler を Initialize したかどうかのフラグを持っておく（Textureがない人もいるかもだから）
+	・DescPool の遅延アップデートをやめたい
+・SamplerPool も作る？（CreateInfo がキー，参照数がメンバ）
 
 ・比較
 	・zpre + vertex + forward
