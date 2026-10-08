@@ -4,6 +4,7 @@
 ・RenderPass_Type0 とかにする． で，Readmeで詳細を述べる
 	・と思ったが，やっぱり Commit で積んだほうが良いのでは？
 ・ModelEntry に PrimitiveBase,MaterialBase，SamplerBaseを入れる
+・ClearVG を 16x16 にする．
 
 ・比較
 	・zpre + vertex + forward
