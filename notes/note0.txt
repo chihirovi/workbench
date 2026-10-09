@@ -3,8 +3,8 @@
 ・https://advances.realtimerendering.com/s2018/Siggraph%202018%20HDRP%20talk_with%20notes.pdf
 ・RenderPass_Type0 とかにする． で，Readmeで詳細を述べる
 	・と思ったが，やっぱり Commit で積んだほうが良いのでは？
-・ModelEntry に PrimitiveBase,MaterialBase，SamplerBaseを入れる
-・ClearVG を 16x16 にする．
+・ClearVG を 16x16 にする
+・https://docs.nvidia.com/nsight-graphics/UserGuide/gpu-trace-system-architecture.html
 
 ・比較
 	・zpre + vertex + forward
