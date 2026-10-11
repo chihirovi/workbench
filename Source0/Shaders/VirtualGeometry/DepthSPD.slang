@@ -17,10 +17,13 @@ float ReduceMax4(float d0, float d1, float d2, float d3) {
 // 64bit Visibility Buffer から Depth (float) を復元
 float fetch_depth_from_visiblity_buffer(uint2 pos) {
     // 画面外アクセスの安全対策
+    /*
     if (any(pos >= IMAGE_SIZE)) {
-        return 1.0f; // Far Depth (Reversed-Z の場合は 0.0f に調整)
+        //return 1.0f; // Far Depth (Reversed-Z の場合は 0.0f に調整)
+        pos = IMAGE_SIZE-1;
     }
-    uint64_t temp = visiblity_buffer[pos];
+    */
+    uint64_t temp = visiblity_buffer[min(pos, IMAGE_SIZE - 1)];
     uint32_t ud = uint32_t(temp >> 33);
     return asfloat(ud);
 }
@@ -63,15 +66,18 @@ bool InBounds(uint2 p, uint2 size){
 float FetchMipDepth(uint2 pos, uint mip){
     uint2 size = GetMipSize(mip);
 
-    if (!InBounds(pos, size)) return 1.0f;
-
-    return occlusion_hiz[mip][pos];
+    return occlusion_hiz[mip][min(pos, size)];
 }
 
 float FetchMip4(uint2 pos){
     uint2 size = GetMipSize(4);
-    if (any(pos >= size)) return 1.0f;
-    return occlusion_hiz_mip4[pos];
+    //if (any(pos >= size)) return 1.0f;
+    //return occlusion_hiz_mip4[pos];
+    //return InterlockedExchange(occlusion_hiz[4][pos], 0);
+    // あんまり変わらなかった，どっちも0.07msだった
+    float value;
+    InterlockedAdd(occlusion_hiz[4][min(pos, size)], 0, value);
+    return value;
 }
 
 // ============================================================================
@@ -238,7 +244,9 @@ void main_comp(
         uint2 mip4_coord = tile_idx * 4u + t2d;
         if (InBounds(mip4_coord, mip4_size)) {
             //occlusion_hiz[4][mip4_coord]   = mip4_val; // 統一Mipチェーン側 (Phase4が参照)
-            occlusion_hiz_mip4[mip4_coord] = mip4_val; // クロスワークグループ集約用 (globallycoherent)
+            // あんまり変わらなかった，どっちも0.07msだった
+            InterlockedExchange(occlusion_hiz[4][mip4_coord], mip4_val);
+            //occlusion_hiz_mip4[mip4_coord] = mip4_val; // クロスワークグループ集約用 (globallycoherent)
         }
     }
 
@@ -267,7 +275,8 @@ void main_comp(
     uint2 current_size = GetMipSize(4);
 
     for (uint mip = 5; mip <= 11; ++mip) {
-        uint2 dst_size = max( (current_size + 1u) >> 1u, uint2(1, 1));
+        //uint2 dst_size = max( (current_size + 1u) >> 1u, uint2(1, 1));
+        uint2 dst_size = GetMipSize(mip);
 
         uint total_pixels = dst_size.x * dst_size.y;
 
@@ -290,7 +299,8 @@ void main_comp(
             }
 
             float result = ReduceMax4(v0, v1, v2, v3);
-            occlusion_hiz[mip][dst_coord] = result;
+            //occlusion_hiz[mip][dst_coord] = result;
+            if (InBounds(dst_coord, dst_size)) occlusion_hiz[mip][dst_coord] = result;
         }
 
         // All threads in THIS final workgroup must finish
