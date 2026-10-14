@@ -2,13 +2,14 @@
 #include "../Include/GlobalDescriptor.h.slang"
 
 // グループ共有メモリ: 16x16 のダウンサンプル計算用 (256スレッド)
-groupshared float gs_depth_samples[16][16];
+groupshared float16_t gs_depth_samples[16][16];
 groupshared uint32_t gs_spd_counter;
 
 //------------------------------------------------------------------------------
 // ヘルパー関数: 2x2 の Depth サンプルから最小値（最手前のDepth）を抽出
 //------------------------------------------------------------------------------
-float ReduceMax4(float d0, float d1, float d2, float d3) {
+//float ReduceMax4(float d0, float d1, float d2, float d3) {
+float16_t ReduceMax4(float16_t d0, float16_t d1, float16_t d2, float16_t d3) {
     return max(max(d0, d1), max(d2, d3));
 }
 
@@ -17,13 +18,13 @@ float ReduceMax4(float d0, float d1, float d2, float d3) {
 // 64bit Visibility Buffer から Depth (float) を復元
 float fetch_depth_from_visiblity_buffer(uint2 pos) {
     // 画面外アクセスの安全対策
-    /*
     if (any(pos >= IMAGE_SIZE)) {
         //return 1.0f; // Far Depth (Reversed-Z の場合は 0.0f に調整)
         pos = IMAGE_SIZE-1;
     }
-    */
-    uint64_t temp = visiblity_buffer[min(pos, IMAGE_SIZE - 1)];
+    // min を使うと，0.07 -> 0.14 になった，シビア
+    //uint64_t temp = visiblity_buffer[min(pos, IMAGE_SIZE - 1)];
+    uint64_t temp = visiblity_buffer[pos];
     uint32_t ud = uint32_t(temp >> 33);
     return asfloat(ud);
 }
@@ -63,21 +64,29 @@ bool InBounds(uint2 p, uint2 size){
 // Mip load
 // ============================================================================
 
-float FetchMipDepth(uint2 pos, uint mip){
+float16_t FetchMipDepth(uint2 pos, uint mip){
     uint2 size = GetMipSize(mip);
-
-    return occlusion_hiz[mip][min(pos, size)];
+    // 画面外アクセスの安全対策
+    if (any(pos >= size)) {
+        pos = size-1;
+    }
+    return occlusion_hiz[mip][pos];
 }
 
-float FetchMip4(uint2 pos){
+float16_t FetchMip4(uint2 pos){
     uint2 size = GetMipSize(4);
-    //if (any(pos >= size)) return 1.0f;
-    //return occlusion_hiz_mip4[pos];
+    if (any(pos >= size)) pos = size-1;
+    return occlusion_hiz_mip4[pos];
     //return InterlockedExchange(occlusion_hiz[4][pos], 0);
     // あんまり変わらなかった，どっちも0.07msだった
+    /*
     float value;
-    InterlockedAdd(occlusion_hiz[4][min(pos, size)], 0, value);
+
+    // こうすべき，じゃないと，端のほうは 1.0f で判定されて，無駄な描画が発生する
+    // つまりは，有効な値を外側に伸ばす感じ
+    InterlockedAdd(occlusion_hiz[4][min(pos, size)], (0.0), value);
     return value;
+    */
 }
 
 // ============================================================================
@@ -109,7 +118,7 @@ void main_comp(
 
     uint2 base_coord = tile_idx * 64u + thread_2d * 4u;
 
-    float mip1_vals[4];
+    float16_t mip1_vals[4];
 
     uint2 mip0_size = GetMipSize(0);
     uint2 mip1_size = GetMipSize(1);
@@ -128,10 +137,10 @@ void main_comp(
         // Load source / visibility buffer
         // ------------------------------------------------------------
 
-        float d00 = fetch_depth_from_visiblity_buffer(p + uint2(0, 0));
-        float d10 = fetch_depth_from_visiblity_buffer(p + uint2(1, 0));
-        float d01 = fetch_depth_from_visiblity_buffer(p + uint2(0, 1));
-        float d11 = fetch_depth_from_visiblity_buffer(p + uint2(1, 1));
+        float16_t d00 = fetch_depth_from_visiblity_buffer(p + uint2(0, 0));
+        float16_t d10 = fetch_depth_from_visiblity_buffer(p + uint2(1, 0));
+        float16_t d01 = fetch_depth_from_visiblity_buffer(p + uint2(0, 1));
+        float16_t d11 = fetch_depth_from_visiblity_buffer(p + uint2(1, 1));
 
         // ------------------------------------------------------------
         // Mip0
@@ -153,11 +162,11 @@ void main_comp(
         // Mip1
         // ------------------------------------------------------------
 
-        float mip1 = ReduceMax4(d00, d10, d01, d11);
+        float16_t mip1 = ReduceMax4(d00, d10, d01, d11);
 
         uint2 mip1_coord = tile_idx * 32u + thread_2d * 2u + uint2(i & 1u, i >> 1u);
 
-        if (InBounds(mip1_coord, mip1_size)) occlusion_hiz[1][mip1_coord] = mip1;
+        if (InBounds(mip1_coord, mip1_size)) occlusion_hiz[1][mip1_coord] = float16_t(mip1);
 
         mip1_vals[i] = mip1;
     }
@@ -168,11 +177,11 @@ void main_comp(
 
     uint2 mip2_size = GetMipSize(2);
 
-    float mip2_val = ReduceMax4(mip1_vals[0], mip1_vals[1], mip1_vals[2], mip1_vals[3]);
+    float16_t mip2_val = ReduceMax4(mip1_vals[0], mip1_vals[1], mip1_vals[2], mip1_vals[3]);
 
     uint2 mip2_coord = tile_idx * 16u + thread_2d;
 
-    if (InBounds(mip2_coord, mip2_size)) occlusion_hiz[2][mip2_coord] = mip2_val;
+    if (InBounds(mip2_coord, mip2_size)) occlusion_hiz[2][mip2_coord] = float16_t(mip2_val);
 
     // LDS:
     // 16 x 16 = Mip2 produced by this workgroup
@@ -197,19 +206,19 @@ void main_comp(
 
     bool is_mip3_thread = thread_idx < 64;
     uint2 t2d_mip3 = uint2(thread_idx & 7u, thread_idx >> 3u);
-    float mip3_val = 0.0f;
+    float16_t mip3_val = 0.0;
 
     if (is_mip3_thread){
-        float v0 = gs_depth_samples[t2d_mip3.y * 2 + 0][t2d_mip3.x * 2 + 0];
-        float v1 = gs_depth_samples[t2d_mip3.y * 2 + 0][t2d_mip3.x * 2 + 1];
-        float v2 = gs_depth_samples[t2d_mip3.y * 2 + 1][t2d_mip3.x * 2 + 0];
-        float v3 = gs_depth_samples[t2d_mip3.y * 2 + 1][t2d_mip3.x * 2 + 1];
+        float16_t v0 = gs_depth_samples[t2d_mip3.y * 2 + 0][t2d_mip3.x * 2 + 0];
+        float16_t v1 = gs_depth_samples[t2d_mip3.y * 2 + 0][t2d_mip3.x * 2 + 1];
+        float16_t v2 = gs_depth_samples[t2d_mip3.y * 2 + 1][t2d_mip3.x * 2 + 0];
+        float16_t v3 = gs_depth_samples[t2d_mip3.y * 2 + 1][t2d_mip3.x * 2 + 1];
 
         mip3_val = ReduceMax4(v0, v1, v2, v3);
 
         uint2 mip3_coord = tile_idx * 8u + t2d_mip3;
 
-        if (InBounds(mip3_coord, mip3_size)) occlusion_hiz[3][mip3_coord] = mip3_val;
+        if (InBounds(mip3_coord, mip3_size)) occlusion_hiz[3][mip3_coord] = float16_t(mip3_val);
     }
 
     // 全スレッド (256) が一様に到達するバリア。
@@ -235,18 +244,17 @@ void main_comp(
     if (thread_idx < 16) {
         uint2 t2d = uint2( thread_idx & 3u, thread_idx >> 2u);
 
-        float v0 = gs_depth_samples[t2d.y * 2 + 0][t2d.x * 2 + 0];
-        float v1 = gs_depth_samples[t2d.y * 2 + 0][t2d.x * 2 + 1];
-        float v2 = gs_depth_samples[t2d.y * 2 + 1][t2d.x * 2 + 0];
-        float v3 = gs_depth_samples[t2d.y * 2 + 1][t2d.x * 2 + 1];
+        float16_t v0 = gs_depth_samples[t2d.y * 2 + 0][t2d.x * 2 + 0];
+        float16_t v1 = gs_depth_samples[t2d.y * 2 + 0][t2d.x * 2 + 1];
+        float16_t v2 = gs_depth_samples[t2d.y * 2 + 1][t2d.x * 2 + 0];
+        float16_t v3 = gs_depth_samples[t2d.y * 2 + 1][t2d.x * 2 + 1];
 
-        float mip4_val = ReduceMax4(v0, v1, v2, v3);
+        float16_t mip4_val = ReduceMax4(v0, v1, v2, v3);
         uint2 mip4_coord = tile_idx * 4u + t2d;
         if (InBounds(mip4_coord, mip4_size)) {
-            //occlusion_hiz[4][mip4_coord]   = mip4_val; // 統一Mipチェーン側 (Phase4が参照)
             // あんまり変わらなかった，どっちも0.07msだった
-            InterlockedExchange(occlusion_hiz[4][mip4_coord], mip4_val);
-            //occlusion_hiz_mip4[mip4_coord] = mip4_val; // クロスワークグループ集約用 (globallycoherent)
+            //InterlockedExchange(occlusion_hiz[4][mip4_coord], (mip4_val));
+            occlusion_hiz_mip4[mip4_coord] = float16_t(mip4_val); // クロスワークグループ集約用 (globallycoherent)
         }
     }
 
@@ -259,7 +267,7 @@ void main_comp(
 
 
     if (thread_idx == 0) {
-        InterlockedAdd( spd_completed_count[0], 1u, gs_spd_counter);
+        InterlockedAdd(spd_completed_count[0], 1u, gs_spd_counter);
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -285,7 +293,7 @@ void main_comp(
 
             uint2 src_coord = dst_coord * 2u;
 
-            float v0, v1, v2, v3;
+            float16_t v0, v1, v2, v3;
             if(mip == 5){ // Mip4 は専用 resource
                 v0 = FetchMip4(src_coord + uint2(0, 0));
                 v1 = FetchMip4(src_coord + uint2(1, 0));
@@ -298,9 +306,9 @@ void main_comp(
                 v3 = FetchMipDepth( src_coord + uint2(1, 1), mip - 1);
             }
 
-            float result = ReduceMax4(v0, v1, v2, v3);
-            //occlusion_hiz[mip][dst_coord] = result;
-            if (InBounds(dst_coord, dst_size)) occlusion_hiz[mip][dst_coord] = result;
+            float16_t result = ReduceMax4(v0, v1, v2, v3);
+            //occlusion_hiz[mip][dst_coord] = float16_t(result);
+            if (InBounds(dst_coord, dst_size)) occlusion_hiz[mip][dst_coord] = float16_t(result);
         }
 
         // All threads in THIS final workgroup must finish
