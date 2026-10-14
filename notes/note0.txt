@@ -5,6 +5,7 @@
 	・と思ったが，やっぱり Commit で積んだほうが良いのでは？
 ・ClearVG を 16x16 にする
 ・https://docs.nvidia.com/nsight-graphics/UserGuide/gpu-trace-system-architecture.html
+・Hiz を F16 にしようかと思ったが，あんまり変わらん
 
 ・比較
 	・zpre + vertex + forward
