@@ -6,12 +6,19 @@
 ・ClearVG を 16x16 にする
 ・https://docs.nvidia.com/nsight-graphics/UserGuide/gpu-trace-system-architecture.html
 ・Hiz を F16 にしようかと思ったが，あんまり変わらん
+・uint64 のクリアが RG 成分が使われる？
 
-・比較
-	・zpre + vertex + forward
-	・2pass hiz + mesh + forward （と思ったが，描画単位をClusterに分解したせいで，FSを差し替えるのはむずそうなのでなし）
-	・2pass hiz + mesh + visiblity
-	・2pass hiz + mesh + HWSW_Raster + visiblity 
-	  (SW_Rasterの面積見積もりは，Bounding Sphere と Normal Cone で出す，AABBは重いかも)
-	・2pass hiz + mesh + normal cone + frustum + contirbution
-	・2pass hiz + mesh + soft triangle culling 
+perprimitiveEXT out gl_MeshPerPrimitiveEXT {
+    int gl_PrimitiveID;
+} gl_MeshPrimitivesEXT[];
+
+void main()
+{
+    // ...
+    SetMeshOutputsEXT(vertexCount, primitiveCount);
+
+    for (uint i = 0; i < primitiveCount; ++i) {
+        gl_MeshPrimitivesEXT[i].gl_PrimitiveID = int(i);
+        // gl_PrimitiveTriangleIndicesEXT[i] = ...;
+    }
+}
