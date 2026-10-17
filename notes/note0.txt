@@ -1,12 +1,10 @@
 ・TileIndexは16bitでいい， sizeof(uin16_t)*tile_num*MAX_MATERIAL
 ・SamplerPool も作る？（CreateInfo がキー，参照数がメンバ）
 ・https://advances.realtimerendering.com/s2018/Siggraph%202018%20HDRP%20talk_with%20notes.pdf
-・RenderPass_Type0 とかにする． で，Readmeで詳細を述べる
-	・と思ったが，やっぱり Commit で積んだほうが良いのでは？
-・ClearVG を 16x16 にする
 ・https://docs.nvidia.com/nsight-graphics/UserGuide/gpu-trace-system-architecture.html
 ・Hiz を F16 にしようかと思ったが，あんまり変わらん
 ・uint64 のクリアが RG 成分が使われる？
+・MaterialDepthImage は FrameRenderDataBuffer に持たせる，NVN ならバインドは Handle だけで行けるかも？
 
 perprimitiveEXT out gl_MeshPerPrimitiveEXT {
     int gl_PrimitiveID;
