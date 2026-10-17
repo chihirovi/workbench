@@ -5,7 +5,7 @@
 ・Hiz を F16 にしようかと思ったが，あんまり変わらん
 ・uint64 のクリアが RG 成分が使われる？
 ・MaterialDepthImage は FrameRenderDataBuffer に持たせる，NVN ならバインドは Handle だけで行けるかも？
-  MaterialDepth の Clear もコマンドにやらせる！
+  MaterialDepth の Clear もコマンドにやらせると思ったが，普通に二重の上書きになりそうだから，なし．
 
 perprimitiveEXT out gl_MeshPerPrimitiveEXT {
     int gl_PrimitiveID;
