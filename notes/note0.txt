@@ -21,3 +21,126 @@ void main()
         // gl_PrimitiveTriangleIndicesEXT[i] = ...;
     }
 }
+
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void main_comp(
+    in uint3 global_thread_id   : SV_DispatchThreadID,
+    in uint3 local_thread_id    : SV_GroupThreadID,
+    in uint3 group_id           : SV_GroupID) {
+    
+    uint2 pixelPos = global_thread_id.xy;
+
+    [branch]
+    if (all(pixelPos < uint2(frame_render_data.render_target_width, frame_render_data.render_target_height))){
+
+        uint materialID = VB::get_material_id(frame_render_data, cluster_render_queue, visiblity_buffer, pixelPos);
+
+        [branch]
+        if (materialID != MAX_MATERIAL){
+          // マテリアルIDを求める
+     
+            uint4 match = WaveMatch(materialID);
+            uint matCount = countbits(match.x);
+            uint firstThreadNo = firstbitlow(match.x);
+
+            if (WaveGetLaneIndex() == firstThreadNo){
+                InterlockedAdd(material_counts[materialID], matCount);
+            }
+        }
+    }
+}
+
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+#define CTA_SIZE 256
+#define WAVE_SIZE 32
+#define WAVES_PER_CTA (CTA_SIZE / WAVE_SIZE)
+
+// Decoupled look-back 用 (partition_descs_256 は globallycoherent で宣言すること)
+//   globallycoherent RWStructuredBuffer<PartitionDesc> partition_descs_256;
+
+groupshared uint32_t gs_partition_index;
+groupshared uint32_t gs_wave_sums[WAVES_PER_CTA];
+groupshared uint32_t gs_wave_offsets[WAVES_PER_CTA]; // Wave単位のexclusive scan
+groupshared uint32_t gs_preceding_sum;                     // 先行パーティション全ての合計
+
+[shader("compute")]
+[numthreads(CTA_SIZE, 1, 1)]
+void main_comp(in uint3 group_thread_id : SV_GroupThreadID)
+{
+    const uint32_t thread_idx = group_thread_id.x;
+
+    // ---- パーティション番号の動的割り当て (forward progress 保証のため) ----
+    if (thread_idx == 0) {
+        InterlockedAdd(partition_desc_count[0], 1, gs_partition_index);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    const uint32_t partition_idx = gs_partition_index;
+    const uint32_t wave_lane_count = WAVE_SIZE;
+    const uint32_t wave_idx = thread_idx / wave_lane_count;
+
+    // ---- パーティション内スキャン ----
+    const uint32_t count = material_counts[partition_idx * CTA_SIZE + thread_idx];
+    const uint32_t wave_total = WaveActiveSum(count);
+
+    if (WaveIsFirstLane()) {
+        gs_wave_sums[wave_idx] = wave_total;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // ---- Wave合計のexclusive scan + aggregate の公開 ----
+    if (thread_idx == 0) {
+        uint32_t running = 0;
+        for (uint32_t i = 0; i < WAVES_PER_CTA; i++) {
+            gs_wave_offsets[i] = running;
+            running += gs_wave_sums[i];
+        }
+
+        if (partition_idx == 0) {
+            // 先頭パーティションは先行がないので、いきなりPを公開
+            InterlockedExchange(partition_descs_256[0].inclusivePrefix, running);
+            DeviceMemoryBarrier();
+            InterlockedExchange(partition_descs_256[0].status, PARTITION_STATUS_P);
+            gs_preceding_sum = 0;
+
+        } else {
+            InterlockedExchange(partition_descs_256[partition_idx].reduction_value, running);
+            DeviceMemoryBarrier();
+            InterlockedExchange(partition_descs_256[partition_idx].status, PARTITION_STATUS_R);
+
+            // ---- Decoupled look-back ----
+            uint32_t preceding_sum = 0;
+            uint32_t look_idx = partition_idx - 1;
+
+            [loop]
+            while (true) {
+                uint32_t status;
+                InterlockedOr(partition_descs_256[look_idx].status, 0, status);
+
+                if (status == PARTITION_STATUS_P) {
+                    DeviceMemoryBarrier(); // status 読み取り後に値を読む
+                    preceding_sum += partition_descs_256[look_idx].inclusivePrefix;
+                    break;
+
+                } else if (status == PARTITION_STATUS_R) {
+                    DeviceMemoryBarrier();
+                    preceding_sum += partition_descs_256[look_idx].reduction_value;
+                    look_idx--; 
+                }
+            }
+
+            InterlockedExchange(partition_descs_256[partition_idx].inclusivePrefix, preceding_sum + running);
+            DeviceMemoryBarrier();
+            InterlockedExchange(partition_descs_256[partition_idx].status, PARTITION_STATUS_P);
+            gs_preceding_sum = preceding_sum;
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    // ---- 出力: 要素iの inclusive prefix を [i+1] に書く (= [0]=0 のexclusive scan配列) ----
+    const uint32_t wave_exclusive = WavePrefixSum(count);
+    material_prefix_sum[CTA_SIZE * partition_idx + thread_idx + 1] =
+        gs_preceding_sum + gs_wave_offsets[wave_idx] + wave_exclusive + count;
+}
