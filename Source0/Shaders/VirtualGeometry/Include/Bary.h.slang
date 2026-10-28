@@ -76,8 +76,6 @@ void CalcDerivativeFloat3(BarycentricDeriv deriv, float3 v0, float3 v1, float3 v
 */
 
 // =========================================
-
-
 struct PerspectiveWeights
 {
     // 指定位置における透視補正済み重心ウェイト。
@@ -91,7 +89,6 @@ struct PerspectiveWeights
     float3 dy;
 };
 
-
 // 2D ベクトルの外積。
 // 結果の符号は向きを、絶対値は平行四辺形の面積を表す。
 float CrossProduct2D(float2 a, float2 b)
@@ -99,50 +96,95 @@ float CrossProduct2D(float2 a, float2 b)
     return a.x * b.y - a.y * b.x;
 }
 
-
-// スクリーン空間上の三角形に対して、位置 p のアフィン重心座標を求める。
-// この段階では透視補正を行わない。
-float3 ComputeScreenBarycentrics(
+// スクリーン空間上の三角形について、アフィン重心座標と
+// NDC 座標系における X / Y 方向の解析的微分を求める。
+void ComputeScreenBarycentricsAndDerivatives(
     float2 p,
     float2 p0,
     float2 p1,
-    float2 p2){
+    float2 p2,
+    out float3 weights,
+    out float3 dWeightsDx,
+    out float3 dWeightsDy){
 
     // 三角形の符号付き面積の 2 倍。
     float area = CrossProduct2D(p1 - p0, p2 - p0);
 
-    // 各頂点に対応する重心座標を、符号付き面積の比から求める。
-    float weight0 = CrossProduct2D(p1 - p, p2 - p) / area;
+    // アフィン重心座標。
+    // 各成分は、評価位置 p と三角形の頂点から作る
+    // 符号付き面積を、三角形全体の面積で割ったもの。
+    weights.x = CrossProduct2D(p1 - p, p2 - p) / area;
+    weights.y = CrossProduct2D(p2 - p, p0 - p) / area;
 
-    float weight1 = CrossProduct2D(p2 - p, p0 - p) / area;
+    // 重心座標の合計は常に 1。
+    weights.z = 1.0f - weights.x - weights.y;
 
-    // 重心座標の合計は 1 なので、残りの成分は差し引きで求められる。
-    float weight2 = 1.0f - weight0 - weight1;
+    // アフィン重心座標はスクリーン座標に対して線形なので、
+    // その微分は位置 p に依存せず、三角形の頂点だけで決まる。
+    //
+    // 以下は NDC の X 座標に関する偏微分。
+    dWeightsDx = float3(
+        p1.y - p2.y,
+        p2.y - p0.y,
+        p0.y - p1.y
+    ) / area;
 
-    return float3(weight0, weight1, weight2);
+    // 以下は NDC の Y 座標に関する偏微分。
+    dWeightsDy = float3(
+        p2.x - p1.x,
+        p0.x - p2.x,
+        p1.x - p0.x
+    ) / area;
 }
 
 
-// アフィン重心座標に透視補正を適用する。
-// inverseW は各頂点のクリップ空間 w 成分の逆数。
-float3 ApplyPerspectiveCorrection(
-    float3 screenWeights,
-    float3 inverseW){
+// アフィン重心座標とその微分に透視補正を適用する。
+// weights はアフィン重心座標、inverseW は各頂点の 1 / clip.w。
+void ApplyPerspectiveCorrectionAndDerivatives(
+    float3 weights,
+    float3 dWeightsDxPerPixel,
+    float3 dWeightsDyPerPixel,
+    float3 inverseW,
+    out float3 value,
+    out float3 dx,
+    out float3 dy){
 
-    // 各頂点の重心座標に 1/w を乗じ、透視補正用の重みを作る。
-    float3 correctedWeights = screenWeights * inverseW;
+    // 透視補正前の重心座標に、各頂点の逆 w を乗じる。
+    float3 correctedWeights = weights * inverseW;
 
-    // 重みの合計で除算し、合計が 1 になるように正規化する。
+    // 透視補正の正規化に使う分母 S。
     float weightSum = correctedWeights.x + correctedWeights.y + correctedWeights.z;
 
-    return correctedWeights / weightSum;
+    // 透視補正済み重心座標。
+    value = correctedWeights / weightSum;
+
+    // 分母 S の X / Y 方向の微分。
+    //
+    // inverseW は頂点ごとの定数なので、
+    // dS/dx = sum(inverseW_i * dWeights_i/dx)
+    // dS/dy = sum(inverseW_i * dWeights_i/dy)
+    float dWeightSumDx = dot(dWeightsDxPerPixel, inverseW);
+    float dWeightSumDy = dot(dWeightsDyPerPixel, inverseW);
+
+    // 透視補正済み重心座標の解析的微分。
+    //
+    // lambda_i = correctedWeights_i / S より、
+    // d(lambda_i)/dx = (inverseW_i * dWeights_i/dx - lambda_i * dS/dx) / S
+    // Y 方向も同様。
+    dx = (dWeightsDxPerPixel * inverseW - value * dWeightSumDx) / weightSum;
+
+    dy = (dWeightsDyPerPixel * inverseW - value * dWeightSumDy) / weightSum;
 }
 
 
-// 透視補正済み重心ウェイトと、画面上の X / Y 方向の差分を構築する。
-// clip0～clip2 は各頂点のクリップ空間座標。
-// pixelNdc は評価する位置の NDC 座標。
-// viewportSize は描画領域の幅と高さ（ピクセル単位）。
+// クリップ空間の三角形から、評価位置における透視補正済み重心ウェイトと
+// 画面上で 1 ピクセル移動したときのウェイトの変化量を求める。
+//
+// clip0～clip2 : 各頂点のクリップ空間座標。
+// pixelNdc     : 評価位置の NDC 座標。
+// viewportSize : ビューポートの幅と高さ（ピクセル単位）。
+//
+// NDC の Y 軸は上向き、画面の Y 軸は下向きと仮定する。
 PerspectiveWeights BuildPerspectiveWeights(
     float4 clip0,
     float4 clip1,
@@ -152,36 +194,50 @@ PerspectiveWeights BuildPerspectiveWeights(
 
     PerspectiveWeights result;
 
-    // クリップ空間から NDC への射影に使用する逆 w。
+    // クリップ空間から NDC への射影に使う逆 w。
     float3 inverseW = 1.0f / float3(clip0.w, clip1.w, clip2.w);
 
-    // 各頂点を NDC に変換し、スクリーン空間での三角形を得る。
+    // 各頂点を NDC に変換する。
     float2 p0 = clip0.xy * inverseW.x;
     float2 p1 = clip1.xy * inverseW.y;
     float2 p2 = clip2.xy * inverseW.z;
 
-    // NDC 座標における 1 ピクセル分の移動量。
-    // ここでは NDC の Y 軸が上向き、画面の Y 軸が下向きと仮定する。
-    float2 pixelStepX = float2(2.0f / viewportSize.x, 0.0f);
-    float2 pixelStepY = float2(0.0f, -2.0f / viewportSize.y);
+    // NDC 座標におけるアフィン重心座標と、その解析的微分。
+    float3 screenWeights;
+    float3 dWeightsDx;
+    float3 dWeightsDy;
 
-    // 現在位置と、X / Y 方向に 1 ピクセル進んだ位置の重心座標を求める。
-    float3 screenWeights = ComputeScreenBarycentrics(pixelNdc, p0, p1, p2);
-    float3 screenWeightsX = ComputeScreenBarycentrics(pixelNdc + pixelStepX, p0, p1, p2);
-    float3 screenWeightsY = ComputeScreenBarycentrics(pixelNdc + pixelStepY, p0, p1, p2);
+    ComputeScreenBarycentricsAndDerivatives(
+        pixelNdc,
+        p0, p1, p2,
+        screenWeights,
+        dWeightsDx,
+        dWeightsDy
+    );
 
-    // 各位置の重心座標に透視補正を適用する。
-    result.value = ApplyPerspectiveCorrection(screenWeights, inverseW);
-    float3 weightsX = ApplyPerspectiveCorrection(screenWeightsX, inverseW);
-    float3 weightsY = ApplyPerspectiveCorrection(screenWeightsY, inverseW);
+    // NDC 座標の微分を、画面上の 1 ピクセルあたりの微分に変換する。
+    //
+    // X 方向:
+    //   NDC は 1 ピクセルあたり 2 / width 変化する。
+    //
+    // Y 方向:
+    //   NDC の Y 軸は上向きだが、画面の Y 軸は下向きなので符号を反転する。
+    dWeightsDx *= 2.0f / viewportSize.x;
+    dWeightsDy *= -2.0f / viewportSize.y;
 
-    // 隣接位置との差分を計算する。
-    result.dx = weightsX - result.value;
-    result.dy = weightsY - result.value;
+    // 透視補正後の重心座標と、その解析的微分を求める。
+    ApplyPerspectiveCorrectionAndDerivatives(
+        screenWeights,
+        dWeightsDx,
+        dWeightsDy,
+        inverseW,
+        result.value,
+        result.dx,
+        result.dy
+    );
 
     return result;
 }
-
 
 // スカラー属性を補間し、値と X / Y 方向の差分を返す。
 // 戻り値の x は補間値、y は X 方向の差分、z は Y 方向の差分。
