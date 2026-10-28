@@ -7,7 +7,7 @@
 
 struct VSOutput{
     float4 clip_position    : SV_Position;
-    uint32_t mat_id         : MATERIAL_ID;
+    nointerpolation uint32_t mat_id         : MATERIAL_ID;
 };
 
 [[shader("vertex")]]
@@ -47,6 +47,8 @@ VSOutput main_vert(
 [earlydepthstencil]
 void main_fragment(in VSOutput vs_output) {
 
+    // 本当は material depth を 1.0fにして，
+    // Fragment の起動をさせないのがいいのかもしれん
     uint32_t temp = uint32_t(visiblity_buffer[uint32_t2(vs_output.clip_position.xy)]);
 
     if (temp == 0xFFFFFFFF) return;
@@ -86,7 +88,7 @@ void main_fragment(in VSOutput vs_output) {
 	float2 clipSpacePos = screenPos * float2(2, 2) - float2(1, 1);
 
     // get bary
-    BarycentricDeriv bary = CalcFullBary(clip_pos0, clip_pos1, clip_pos2, clipSpacePos, screenSize);
+    PerspectiveWeights bary = BuildPerspectiveWeights(clip_pos0, clip_pos1, clip_pos2, clipSpacePos, screenSize);
     
     // uv
     float2 uv0 = unpackHalf2x16ToFloat(v0.packed_tex_coord);
@@ -94,9 +96,10 @@ void main_fragment(in VSOutput vs_output) {
     float2 uv2 = unpackHalf2x16ToFloat(v2.packed_tex_coord);
     
     float2 uv, uv_dx, uv_dy;
-    CalcDerivativeFloat2(bary, uv0, uv1, uv2, uv, uv_dx, uv_dy);
+    EvaluateFloat2Attribute(bary, uv0, uv1, uv2, uv, uv_dx, uv_dy);
     
     // material
+    //Material *material = &frame_render_data.material_table[WaveReadLaneFirst(vs_output.mat_id)];
     Material *material = &frame_render_data.material_table[vs_output.mat_id];
     uint32_t texture_id_base = material->texture_id_base;
     uint32_t texture_view_id_base = material->texture_view_id_base;
@@ -106,7 +109,7 @@ void main_fragment(in VSOutput vs_output) {
     float3 n1 = decode_spherical_16(v1.encode_normal);
     float3 n2 = decode_spherical_16(v2.encode_normal);
     float3 n, n_dx, n_dy;
-    CalcDerivativeFloat3(bary, n0, n1, n2, n, n_dx, n_dy);
+    EvaluateFloat3Attribute(bary, n0, n1, n2, n, n_dx, n_dy);
     n = mul(inst_ref.reverse_transpose_3x3_model_matrix, n); // inverse のtypo
     
     // albedo
@@ -126,6 +129,8 @@ void main_fragment(in VSOutput vs_output) {
     albedo = albedo * float4(material.base_color_factor[0], material.base_color_factor[1], material.base_color_factor[2], material.base_color_factor[3]);
     albedo.rgb *= max(0.01, abs(dot(n, frame_render_data.directional_light_dir.xyz)));
     albedo.rgb = linear_to_srgb(albedo.rgb);
+
+    albedo.rg = uv;
 
     mat_tile_output[uint32_t2(vs_output.clip_position.xy)] = albedo;
 }
